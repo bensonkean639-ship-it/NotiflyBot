@@ -1,11 +1,9 @@
 import os
 import logging
-from flask import Flask, request, jsonify
-import requests
-import subprocess
-import sys
 import threading
 import time
+from flask import Flask, request, jsonify
+import requests
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -13,22 +11,23 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
+# Import the bot functions
+from bot import main as run_bot
+
 @app.route('/')
 def health_check():
-    """Health check endpoint."""
     return jsonify({
         'status': 'ok',
-        'message': 'Telegram Bot is running',
+        'message': 'Telegram Notification Bot is running',
         'token_configured': bool(TOKEN)
     })
 
 @app.route('/health', methods=['GET'])
 def health():
-    """Detailed health check."""
     return jsonify({
         'status': 'healthy',
         'telegram_token': 'configured' if TOKEN else 'missing',
-        'bot_online': True
+        'bot_running': True
     })
 
 @app.route('/send', methods=['GET', 'POST'])
@@ -60,15 +59,11 @@ def send_message():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-def run_bot():
-    """Run the bot in a separate thread."""
-    from bot import main
-    main()
-
 if __name__ == '__main__':
     # Start the bot in a background thread
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
+    logging.info("Bot started in background thread")
     
     # Run the web server
     port = int(os.getenv('PORT', 8080))
