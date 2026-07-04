@@ -2,61 +2,25 @@ import os
 import logging
 from flask import Flask, request, jsonify
 import requests
+import subprocess
+import sys
+import threading
+import time
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Get environment variables
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-
-def send_telegram_message(message):
-    """Send message to Telegram."""
-    if not TOKEN or not CHAT_ID:
-        return False
-    
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {
-            'chat_id': CHAT_ID,
-            'text': message,
-            'parse_mode': 'HTML'
-        }
-        response = requests.post(url, json=payload, timeout=10)
-        return response.status_code == 200
-    except Exception as e:
-        logging.error(f"Error sending message: {e}")
-        return False
 
 @app.route('/')
 def health_check():
     """Health check endpoint."""
     return jsonify({
         'status': 'ok',
-        'message': 'Telegram Notification Bot is running',
-        'token_configured': bool(TOKEN),
-        'chat_id_configured': bool(CHAT_ID)
+        'message': 'Telegram Bot is running',
+        'token_configured': bool(TOKEN)
     })
-
-@app.route('/send', methods=['POST'])
-def send_message():
-    """API endpoint to send a notification."""
-    try:
-        data = request.get_json()
-        message = data.get('message')
-        
-        if not message:
-            return jsonify({'error': 'Missing message parameter'}), 400
-        
-        success = send_telegram_message(message)
-        
-        if success:
-            return jsonify({'status': 'success', 'message': 'Notification sent'}), 200
-        else:
-            return jsonify({'status': 'error', 'message': 'Failed to send'}), 500
-            
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -64,9 +28,48 @@ def health():
     return jsonify({
         'status': 'healthy',
         'telegram_token': 'configured' if TOKEN else 'missing',
-        'chat_id': 'configured' if CHAT_ID else 'missing'
+        'bot_online': True
     })
 
+@app.route('/send', methods=['GET', 'POST'])
+def send_message():
+    """Send a notification message."""
+    if not TOKEN or not CHAT_ID:
+        return jsonify({'error': 'Missing credentials'}), 500
+    
+    try:
+        if request.method == 'GET':
+            message = request.args.get('message', 'Test notification!')
+        else:
+            data = request.get_json()
+            message = data.get('message', 'Test notification!')
+        
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        payload = {
+            'chat_id': CHAT_ID,
+            'text': message,
+            'parse_mode': 'HTML'
+        }
+        response = requests.post(url, json=payload, timeout=10)
+        
+        if response.status_code == 200:
+            return jsonify({'status': 'success', 'message': 'Notification sent'}), 200
+        else:
+            return jsonify({'status': 'error', 'message': response.text}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def run_bot():
+    """Run the bot in a separate thread."""
+    from bot import main
+    main()
+
 if __name__ == '__main__':
+    # Start the bot in a background thread
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
+    
+    # Run the web server
     port = int(os.getenv('PORT', 8080))
     app.run(host='0.0.0.0', port=port)
