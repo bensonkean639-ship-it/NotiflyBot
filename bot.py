@@ -1,8 +1,7 @@
 import os
-import requests
 import logging
-import time
-from datetime import datetime
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Configure logging
 logging.basicConfig(
@@ -11,82 +10,97 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Get environment variables
+# Get token
 TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
-# Debug: Check if variables exist
-logger.info(f"TOKEN exists: {bool(TOKEN)}")
-logger.info(f"CHAT_ID exists: {bool(CHAT_ID)}")
+if not TOKEN:
+    logger.error("TELEGRAM_BOT_TOKEN not set!")
+    exit(1)
 
-if not TOKEN or not CHAT_ID:
-    logger.error("Missing required environment variables!")
-    logger.error("Please set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
-    # Don't exit, let it try to run anyway for debugging
-else:
-    logger.info("Environment variables loaded successfully")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a message when /start is issued."""
+    user = update.effective_user
+    await update.message.reply_text(
+        f"Hi {user.first_name}! 👋\n\n"
+        f"I'm your notification bot. I can send you alerts!\n\n"
+        f"Commands:\n"
+        f"/start - Show this message\n"
+        f"/help - Show help\n"
+        f"/ping - Check if I'm alive\n"
+        f"/echo <message> - Echo your message"
+    )
+    logger.info(f"User {user.first_name} started the bot")
 
-URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage" if TOKEN else None
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send a message when /help is issued."""
+    await update.message.reply_text(
+        "🤖 Available commands:\n\n"
+        "/start - Start the bot\n"
+        "/help - Show this help\n"
+        "/ping - Check if bot is alive\n"
+        "/echo <message> - Echo your message\n\n"
+        "Just send me any message and I'll reply!"
+    )
 
-def send_notification(message, parse_mode='HTML'):
-    """
-    Send a notification message to the configured Telegram chat.
-    """
-    if not TOKEN or not CHAT_ID:
-        logger.error("Cannot send: Missing token or chat ID")
-        return False
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Respond to /ping command."""
+    await update.message.reply_text("🏓 Pong! I'm alive and working!")
+    logger.info("Ping command received")
+
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Echo the user's message."""
+    if context.args:
+        message = ' '.join(context.args)
+        await update.message.reply_text(f"🔊 You said: {message}")
+    else:
+        await update.message.reply_text("Please provide a message: /echo <message>")
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle regular messages."""
+    message_text = update.message.text
+    user = update.effective_user
+    
+    logger.info(f"Received message from {user.first_name}: {message_text}")
+    
+    # Send a response
+    await update.message.reply_text(
+        f"📨 I received your message!\n\n"
+        f"Your message: {message_text}\n\n"
+        f"Use /help to see available commands."
+    )
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Log errors."""
+    logger.error(f"Update {update} caused error {context.error}")
+
+def main():
+    """Start the bot."""
+    logger.info("Starting Telegram Bot...")
+    logger.info(f"Using token: {TOKEN[:10]}...")  # Log first 10 chars for debugging
     
     try:
-        payload = {
-            'chat_id': CHAT_ID,
-            'text': message,
-            'parse_mode': parse_mode,
-            'disable_web_page_preview': True
-        }
+        # Create the Application
+        application = Application.builder().token(TOKEN).build()
         
-        response = requests.post(URL, json=payload, timeout=10)
-        response.raise_for_status()
+        # Register command handlers
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("help", help_command))
+        application.add_handler(CommandHandler("ping", ping))
+        application.add_handler(CommandHandler("echo", echo))
         
-        logger.info(f"Notification sent successfully")
-        return True
+        # Register message handler for all text messages
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to send notification: {e}")
-        return False
-
-def test_bot():
-    """Send a test message to verify the bot is working."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    test_message = f"""
-<b>🚀 Bot is Live!</b>
-
-<i>Your Telegram notification bot is up and running!</i>
-📅 Time: {timestamp}
-✅ Status: Active
-
-<b>Ready to receive notifications.</b>
-    """
-    return send_notification(test_message)
+        # Register error handler
+        application.add_error_handler(error_handler)
+        
+        # Start the bot
+        logger.info("Bot is starting to poll for updates...")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        
+    except Exception as e:
+        logger.error(f"Failed to start bot: {e}")
+        raise
 
 if __name__ == "__main__":
-    logger.info("Starting Telegram Notification Bot...")
-    
-    # Send a test notification on startup
-    if TOKEN and CHAT_ID:
-        if test_bot():
-            logger.info("✅ Bot started successfully!")
-        else:
-            logger.warning("⚠️ Bot started but failed to send test notification")
-    else:
-        logger.warning("⚠️ Bot started but missing credentials")
-    
-    # Keep the bot running
-    try:
-        while True:
-            # Keep the bot alive
-            # You can add your custom notification logic here
-            time.sleep(60)  # Check every minute
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+    main()
