@@ -1,89 +1,40 @@
+from commands import bot
 import os
-import requests
-import logging
-from datetime import datetime
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# Get environment variables
-TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-
-if not TOKEN or not CHAT_ID:
-    logger.error("Missing required environment variables!")
-    exit(1)
-
-URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-def send_notification(message, parse_mode='HTML'):
-    """
-    Send a notification message to the configured Telegram chat.
-    
-    Args:
-        message (str): The message to send
-        parse_mode (str): 'HTML' or 'Markdown' for formatting
-    
-    Returns:
-        bool: True if successful, False otherwise
-    """
-    try:
-        payload = {
-            'chat_id': CHAT_ID,
-            'text': message,
-            'parse_mode': parse_mode,
-            'disable_web_page_preview': True
-        }
-        
-        response = requests.post(URL, json=payload, timeout=10)
-        response.raise_for_status()
-        
-        logger.info(f"Notification sent successfully: {message[:50]}...")
-        return True
-        
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to send notification: {e}")
-        return False
-
-def test_bot():
-    """Send a test message to verify the bot is working."""
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    test_message = f"""
-<b>🚀 Bot is Live!</b>
-
-<i>Your Telegram notification bot is up and running!</i>
-📅 Time: {timestamp}
-✅ Status: Active
-
-<b>Ready to receive notifications.</b>
-    """
-    return send_notification(test_message)
-
-def main():
-    """Main entry point for the bot."""
-    logger.info("Starting Telegram Notification Bot...")
-    
-    # Send a test notification on startup
-    if test_bot():
-        logger.info("Bot started successfully!")
-    else:
-        logger.error("Bot failed to send startup notification!")
-    
-    # Keep the bot running
-    # You can add scheduled tasks or other logic here
-    import time
-    try:
-        while True:
-            # Add your custom notification logic here
-            # For example, check for new data, send alerts, etc.
-            # This is where you'd add your scheduled tasks
-            time.sleep(60)  # Check every minute
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+import time
+import sys
 
 if __name__ == "__main__":
-    main()
+    print("🤖 WordCounterBot is starting...")
+    
+    # Check if token exists
+    if not os.environ.get('BOT_TOKEN'):
+        print("❌ ERROR: BOT_TOKEN not set in environment!")
+        print("❌ Please add BOT_TOKEN to Railway Variables")
+        print("🔄 Waiting 30 seconds for token to be added...")
+        time.sleep(30)
+        sys.exit(1)
+    
+    try:
+        bot_info = bot.get_me()
+        print(f"✅ Bot is running! Username: @{bot_info.username}")
+        print("✅ Waiting for messages...")
+        
+        # Remove webhook if set
+        try:
+            bot.remove_webhook()
+            print("✅ Webhook removed")
+        except:
+            pass
+        
+        # Start polling with error handling
+        while True:
+            try:
+                bot.infinity_polling(timeout=60, long_polling_timeout=30)
+            except Exception as e:
+                print(f"⚠️ Polling error: {e}")
+                print("🔄 Restarting polling in 5 seconds...")
+                time.sleep(5)
+                
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        sys.exit(1)
